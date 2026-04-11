@@ -1,0 +1,9 @@
+Connected to in-memory MongoDB.
+Lideta backend listening on port 5000
+[0mGET /api/members [32m200[0m 73.188 ms - 44[0m
+[0mGET /health [32m200[0m 0.810 ms - 40[0m
+[0mPOST /api/sync-member [32m200[0m 36.214 ms - 860[0m
+[0mGET /api/members [32m200[0m 9.788 ms - 853[0m
+[0mGET /api/members/by-phone/%2B251911000000 [32m200[0m 8.469 ms - 820[0m
+[0mPATCH /api/members/69d239352151c028e3cb8db2/payments/Megabit [32m200[0m 24.341 ms - 891[0m
+[0mGET /api/members/by-phone/%2B251911000000 [32m200[0m 5.680 ms - 841[0m
