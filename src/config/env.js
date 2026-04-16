@@ -8,6 +8,7 @@ module.exports = {
   mongoUri: process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/lideta-community",
   clientOrigin: process.env.CLIENT_ORIGIN || "*",
   syncAuthToken: process.env.SYNC_AUTH_TOKEN || "",
+  adminJwtSecret: process.env.ADMIN_JWT_SECRET || "lideta-admin-secret",
   afroMessageToken: process.env.AFROMESSAGE_TOKEN || "",
   afroMessageIdentifierId: process.env.AFROMESSAGE_IDENTIFIER_ID || "",
   afroMessageSenderName: process.env.AFROMESSAGE_SENDER_NAME || "",

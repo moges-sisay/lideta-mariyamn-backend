@@ -44,7 +44,18 @@ const memberSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+    committee: {
+      type: String,
+      default: "",
+      trim: true,
+      index: true,
+    },
     committeeLeader: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    registeredByAdmin: {
       type: String,
       default: "",
       trim: true,
@@ -74,4 +85,3 @@ const memberSchema = new mongoose.Schema(
 const Member = mongoose.model("Member", memberSchema);
 
 module.exports = Member;
-
