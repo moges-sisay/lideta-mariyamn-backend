@@ -166,6 +166,53 @@ async function getMemberByPhoneNumber(request, response) {
   });
 }
 
+async function getPublicMemberDirectory(request, response) {
+  const selectedMonth = request.query.month || getCurrentEthiopianMonth();
+  const search = String(request.query.search || "").trim();
+  const filters = {};
+
+  if (!isValidEthiopianMonth(selectedMonth)) {
+    return response.status(400).json({
+      message: "Invalid Ethiopian month supplied.",
+    });
+  }
+
+  if (search) {
+    const expression = new RegExp(escapeRegExp(search), "i");
+    filters.$or = [
+      { fullName: expression },
+      { location: expression },
+      { status: expression },
+      { committee: expression },
+      { committeeLeader: expression },
+    ];
+  }
+
+  const members = await Member.find(filters).sort({ fullName: 1 });
+
+  return response.json({
+    month: selectedMonth,
+    year: getCurrentEthiopianYear(),
+    members: members.map((member) => {
+      const serialized = serializeMember(member);
+
+      return {
+        _id: serialized._id,
+        fullName: serialized.fullName,
+        location: serialized.location,
+        status: serialized.status,
+        committee: serialized.committee,
+        committeeLeader: serialized.committeeLeader,
+        ethiopianYear: serialized.ethiopianYear,
+        currentMonthPayment: serialized.payments?.[selectedMonth] || {
+          isPaid: false,
+          paidAt: null,
+        },
+      };
+    }),
+  });
+}
+
 async function getCommitteeGroups(request, response) {
   const members = await Member.find({}).sort({ committee: 1, fullName: 1 });
   const serializedMembers = members.map(serializeMember);
@@ -494,6 +541,7 @@ module.exports = {
   getAdminDashboardReport,
   getCommitteeGroups,
   getMemberByPhoneNumber,
+  getPublicMemberDirectory,
   listMembers,
   sendCommitteeReminderBroadcast,
   sendSingleReminder,
