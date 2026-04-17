@@ -48,7 +48,7 @@ function calculateSimilarity(left = "", right = "") {
 }
 
 function getMemberCommittee(member) {
-  return member.committee || member.committeeLeader || "Unassigned";
+  return member.committee || "Unassigned";
 }
 
 function createCommitteeGroups(members, options = {}) {

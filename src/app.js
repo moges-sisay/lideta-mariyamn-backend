@@ -6,6 +6,7 @@ const env = require("./config/env");
 const adminRoutes = require("./routes/adminRoutes");
 const memberRoutes = require("./routes/memberRoutes");
 const syncRoutes = require("./routes/syncRoutes");
+const textBeeRoutes = require("./routes/textBeeRoutes");
 
 const app = express();
 
@@ -26,6 +27,7 @@ app.get("/health", (request, response) => {
 
 app.use("/api", syncRoutes);
 app.use("/api", memberRoutes);
+app.use("/api/textbee", textBeeRoutes);
 app.use("/api/admin", adminRoutes);
 
 app.use((request, response) => {
@@ -47,4 +49,3 @@ app.use((error, request, response, next) => {
 });
 
 module.exports = app;
-

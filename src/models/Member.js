@@ -34,10 +34,26 @@ const memberSchema = new mongoose.Schema(
       unique: true,
       index: true,
     },
+    currentLocation: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     location: {
       type: String,
       default: "",
       trim: true,
+    },
+    educationEmploymentStatus: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    gender: {
+      type: String,
+      default: "",
+      trim: true,
+      enum: ["", "male", "female"],
     },
     status: {
       type: String,
@@ -46,7 +62,7 @@ const memberSchema = new mongoose.Schema(
     },
     committee: {
       type: String,
-      default: "",
+      required: true,
       trim: true,
       index: true,
     },

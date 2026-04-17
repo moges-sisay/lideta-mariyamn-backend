@@ -9,8 +9,11 @@ module.exports = {
   clientOrigin: process.env.CLIENT_ORIGIN || "*",
   syncAuthToken: process.env.SYNC_AUTH_TOKEN || "",
   adminJwtSecret: process.env.ADMIN_JWT_SECRET || "lideta-admin-secret",
-  afroMessageToken: process.env.AFROMESSAGE_TOKEN || "",
-  afroMessageIdentifierId: process.env.AFROMESSAGE_IDENTIFIER_ID || "",
-  afroMessageSenderName: process.env.AFROMESSAGE_SENDER_NAME || "",
-  afroMessageBaseUrl: process.env.AFROMESSAGE_BASE_URL || "https://api.afromessage.com/api",
+  publicApiUrl: process.env.PUBLIC_API_URL || "",
+  textBeeEndpoint:
+    process.env.TEXTBEE_ENDPOINT ||
+    "https://api.textbee.dev/api/v1/gateway/devices/69e1fd26b5cd3ce4c77b4522/send-sms",
+  textBeeApiKey:
+    process.env.TEXTBEE_API_KEY || "8a6f23a2-c72d-405c-b647-f2d49e8da034",
+  textBeeTimeoutMs: Number(process.env.TEXTBEE_TIMEOUT_MS) || 15000,
 };

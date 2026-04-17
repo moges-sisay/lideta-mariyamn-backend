@@ -1,4 +1,5 @@
 const Member = require("../models/Member");
+const Feedback = require("../models/Feedback");
 const {
   buildDefaultPayments,
   flattenPayments,
@@ -7,8 +8,16 @@ const {
   isValidEthiopianMonth,
   normalizePayments,
 } = require("../constants/ethiopianCalendar");
-const { sendPaymentReminder } = require("../services/afroMessageService");
-const delay = require("../utils/delay");
+const {
+  DEFAULT_PAYMENT_REMINDER_TEMPLATE,
+  sendBulkPersonalizedSms,
+  sendPaymentReminder,
+} = require("../services/textBeeService");
+const {
+  createMessageReport,
+  extractCampaignId,
+  extractProviderMessage,
+} = require("../services/messageReportService");
 const { normalizePhoneNumberForStorage } = require("../utils/phoneNumber");
 const {
   calculateSimilarity,
@@ -25,16 +34,43 @@ function getRegisteredAdminEmail(request) {
   return request.admin?.email || "";
 }
 
+function getRequestedMessageTemplate(request) {
+  return String(request.body?.message || "").trim();
+}
+
+function buildReportMemberList(members = []) {
+  return members.map((member) => serializeMember(member));
+}
+
+function buildBroadcastCampaignName(prefix, month, committee = "") {
+  const parts = [prefix, month];
+
+  if (committee) {
+    parts.push(committee);
+  }
+
+  return parts
+    .map((part) => String(part || "").trim())
+    .filter(Boolean)
+    .join(" - ");
+}
+
 function buildMemberPayload(input = {}, request) {
   const fullName = String(input.fullName || "").trim();
   const phoneNumber = normalizePhoneNumberForStorage(input.phoneNumber);
-  const committee = String(input.committee || input.committeeLeader || "").trim();
+  const committee = String(input.committee || "").trim();
+  const gender = String(input.gender || "").trim().toLowerCase();
 
   return {
     fullName,
     phoneNumber,
-    location: String(input.location || "").trim(),
-    status: String(input.status || "").trim(),
+    currentLocation: String(input.currentLocation || input.location || "").trim(),
+    location: String(input.currentLocation || input.location || "").trim(),
+    educationEmploymentStatus: String(
+      input.educationEmploymentStatus || input.status || ""
+    ).trim(),
+    gender: gender === "female" ? "female" : gender === "male" ? "male" : "",
+    status: String(input.educationEmploymentStatus || input.status || "").trim(),
     committee,
     committeeLeader: String(input.committeeLeader || "").trim(),
     registeredByAdmin: getRegisteredAdminEmail(request),
@@ -76,7 +112,11 @@ function serializeMember(member) {
   const payload = member.toObject();
 
   payload.payments = normalizePayments(payload.payments);
-  payload.committee = payload.committee || payload.committeeLeader || "";
+  payload.currentLocation = payload.currentLocation || payload.location || "";
+  payload.educationEmploymentStatus =
+    payload.educationEmploymentStatus || payload.status || "";
+  payload.gender = payload.gender || "";
+  payload.committee = payload.committee || "";
   payload.committeeLeader = payload.committeeLeader || "";
   payload.registeredByAdmin = payload.registeredByAdmin || "";
 
@@ -104,7 +144,10 @@ async function syncMember(request, response) {
   } else {
     member.fullName = payload.fullName;
     member.phoneNumber = payload.phoneNumber;
+    member.currentLocation = payload.currentLocation;
     member.location = payload.location;
+    member.educationEmploymentStatus = payload.educationEmploymentStatus;
+    member.gender = payload.gender;
     member.status = payload.status;
     member.committee = payload.committee;
     member.committeeLeader = payload.committeeLeader;
@@ -135,8 +178,9 @@ async function listMembers(request, response) {
     filters.$or = [
       { fullName: expression },
       { phoneNumber: expression },
-      { location: expression },
-      { status: expression },
+      { currentLocation: expression },
+      { educationEmploymentStatus: expression },
+      { gender: expression },
       { committee: expression },
       { committeeLeader: expression },
     ];
@@ -181,8 +225,9 @@ async function getPublicMemberDirectory(request, response) {
     const expression = new RegExp(escapeRegExp(search), "i");
     filters.$or = [
       { fullName: expression },
-      { location: expression },
-      { status: expression },
+      { currentLocation: expression },
+      { educationEmploymentStatus: expression },
+      { gender: expression },
       { committee: expression },
       { committeeLeader: expression },
     ];
@@ -199,8 +244,9 @@ async function getPublicMemberDirectory(request, response) {
       return {
         _id: serialized._id,
         fullName: serialized.fullName,
-        location: serialized.location,
-        status: serialized.status,
+        currentLocation: serialized.currentLocation,
+        educationEmploymentStatus: serialized.educationEmploymentStatus,
+        gender: serialized.gender,
         committee: serialized.committee,
         committeeLeader: serialized.committeeLeader,
         ethiopianYear: serialized.ethiopianYear,
@@ -324,6 +370,7 @@ async function updatePaymentStatus(request, response) {
 
 async function sendSingleReminder(request, response) {
   const { memberId, month } = request.params;
+  const messageTemplate = getRequestedMessageTemplate(request);
 
   if (!isValidEthiopianMonth(month)) {
     return response.status(400).json({
@@ -347,16 +394,56 @@ async function sendSingleReminder(request, response) {
     });
   }
 
-  const result = await sendPaymentReminder(member.phoneNumber, member.fullName, month);
+  const serializedMember = serializeMember(member);
+  let result;
+
+  try {
+    result = await sendPaymentReminder(
+      serializedMember,
+      month,
+      messageTemplate || DEFAULT_PAYMENT_REMINDER_TEMPLATE
+    );
+
+    await createMessageReport({
+      messageType: "single",
+      requestStatus: "accepted",
+      month,
+      committee: serializedMember.committee,
+      campaignName: buildBroadcastCampaignName("Lideta Single Reminder", month, serializedMember.fullName),
+      messageTemplate: messageTemplate || DEFAULT_PAYMENT_REMINDER_TEMPLATE,
+      initiatedByAdmin: getRegisteredAdminEmail(request),
+      members: [serializedMember],
+      result,
+    });
+  } catch (error) {
+    await createMessageReport({
+      messageType: "single",
+      requestStatus: "failed",
+      month,
+      committee: serializedMember.committee,
+      campaignName: buildBroadcastCampaignName("Lideta Single Reminder", month, serializedMember.fullName),
+      messageTemplate: messageTemplate || DEFAULT_PAYMENT_REMINDER_TEMPLATE,
+      initiatedByAdmin: getRegisteredAdminEmail(request),
+      members: [serializedMember],
+      result: {
+        error: String(error || ""),
+      },
+      errorMessage: String(error || ""),
+    });
+
+    throw error;
+  }
 
   return response.json({
     message: `Reminder sent to ${member.fullName}.`,
     result,
+    providerMessage: extractProviderMessage(result),
   });
 }
 
 async function broadcastDebtors(request, response) {
   const { month } = request.body;
+  const messageTemplate = getRequestedMessageTemplate(request);
 
   if (!isValidEthiopianMonth(month)) {
     return response.status(400).json({
@@ -368,46 +455,71 @@ async function broadcastDebtors(request, response) {
     [`payments.${month}.isPaid`]: false,
   }).sort({ fullName: 1 });
 
-  const results = [];
+  if (debtors.length === 0) {
+    return response.json({
+      message: `No unpaid members found for ${month}.`,
+      total: 0,
+      queued: 0,
+      campaignId: null,
+      usedTemplate: messageTemplate || DEFAULT_PAYMENT_REMINDER_TEMPLATE,
+    });
+  }
 
-  for (let index = 0; index < debtors.length; index += 1) {
-    const debtor = debtors[index];
+  const serializedDebtors = buildReportMemberList(debtors);
+  const campaignName = buildBroadcastCampaignName("Lideta All Members", month);
+  let result;
 
-    try {
-      const result = await sendPaymentReminder(debtor.phoneNumber, debtor.fullName, month);
-      results.push({
-        memberId: debtor.id,
-        fullName: debtor.fullName,
-        phoneNumber: debtor.phoneNumber,
-        status: "sent",
-        result,
-      });
-    } catch (error) {
-      results.push({
-        memberId: debtor.id,
-        fullName: debtor.fullName,
-        phoneNumber: debtor.phoneNumber,
-        status: "failed",
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+  try {
+    result = await sendBulkPersonalizedSms({
+      recipients: serializedDebtors.map((member) => ({
+        ...member,
+        month,
+      })),
+      messageTemplate,
+      campaign: campaignName,
+    });
 
-    if (index < debtors.length - 1) {
-      await delay(3000);
-    }
+    await createMessageReport({
+      messageType: "broadcast",
+      requestStatus: "accepted",
+      month,
+      campaignName,
+      messageTemplate: messageTemplate || DEFAULT_PAYMENT_REMINDER_TEMPLATE,
+      initiatedByAdmin: getRegisteredAdminEmail(request),
+      members: serializedDebtors,
+      result,
+    });
+  } catch (error) {
+    await createMessageReport({
+      messageType: "broadcast",
+      requestStatus: "failed",
+      month,
+      campaignName,
+      messageTemplate: messageTemplate || DEFAULT_PAYMENT_REMINDER_TEMPLATE,
+      initiatedByAdmin: getRegisteredAdminEmail(request),
+      members: serializedDebtors,
+      result: {
+        error: String(error || ""),
+      },
+      errorMessage: String(error || ""),
+    });
+
+    throw error;
   }
 
   return response.json({
     message: `Broadcast completed for ${month}.`,
     total: debtors.length,
-    sent: results.filter((item) => item.status === "sent").length,
-    failed: results.filter((item) => item.status === "failed").length,
-    results,
+    queued: debtors.length,
+    campaignId: extractCampaignId(result) || null,
+    providerMessage: extractProviderMessage(result),
+    usedTemplate: messageTemplate || DEFAULT_PAYMENT_REMINDER_TEMPLATE,
   });
 }
 
 async function sendCommitteeReminderBroadcast(request, response) {
   const { month, committee = "" } = request.body;
+  const messageTemplate = getRequestedMessageTemplate(request);
 
   if (!isValidEthiopianMonth(month)) {
     return response.status(400).json({
@@ -434,42 +546,69 @@ async function sendCommitteeReminderBroadcast(request, response) {
     );
   });
 
-  const results = [];
+  if (debtors.length === 0) {
+    return response.json({
+      message: `No unpaid members found for ${committee}.`,
+      committee,
+      total: 0,
+      queued: 0,
+      campaignId: null,
+      usedTemplate: messageTemplate || DEFAULT_PAYMENT_REMINDER_TEMPLATE,
+    });
+  }
 
-  for (let index = 0; index < debtors.length; index += 1) {
-    const debtor = debtors[index];
+  const serializedDebtors = buildReportMemberList(debtors);
+  const campaignName = buildBroadcastCampaignName("Lideta Committee", month, committee);
+  let result;
 
-    try {
-      const result = await sendPaymentReminder(debtor.phoneNumber, debtor.fullName, month);
-      results.push({
-        memberId: debtor.id,
-        fullName: debtor.fullName,
-        phoneNumber: debtor.phoneNumber,
-        status: "sent",
-        result,
-      });
-    } catch (error) {
-      results.push({
-        memberId: debtor.id,
-        fullName: debtor.fullName,
-        phoneNumber: debtor.phoneNumber,
-        status: "failed",
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+  try {
+    result = await sendBulkPersonalizedSms({
+      recipients: serializedDebtors.map((member) => ({
+        ...member,
+        month,
+      })),
+      messageTemplate,
+      campaign: campaignName,
+    });
 
-    if (index < debtors.length - 1) {
-      await delay(3000);
-    }
+    await createMessageReport({
+      messageType: "committee",
+      requestStatus: "accepted",
+      month,
+      committee,
+      campaignName,
+      messageTemplate: messageTemplate || DEFAULT_PAYMENT_REMINDER_TEMPLATE,
+      initiatedByAdmin: getRegisteredAdminEmail(request),
+      members: serializedDebtors,
+      result,
+    });
+  } catch (error) {
+    await createMessageReport({
+      messageType: "committee",
+      requestStatus: "failed",
+      month,
+      committee,
+      campaignName,
+      messageTemplate: messageTemplate || DEFAULT_PAYMENT_REMINDER_TEMPLATE,
+      initiatedByAdmin: getRegisteredAdminEmail(request),
+      members: serializedDebtors,
+      result: {
+        error: String(error || ""),
+      },
+      errorMessage: String(error || ""),
+    });
+
+    throw error;
   }
 
   return response.json({
     message: `Committee reminder broadcast completed for ${committee}.`,
     committee,
     total: debtors.length,
-    sent: results.filter((item) => item.status === "sent").length,
-    failed: results.filter((item) => item.status === "failed").length,
-    results,
+    queued: debtors.length,
+    campaignId: extractCampaignId(result) || null,
+    providerMessage: extractProviderMessage(result),
+    usedTemplate: messageTemplate || DEFAULT_PAYMENT_REMINDER_TEMPLATE,
   });
 }
 
@@ -514,7 +653,10 @@ async function bulkImportMembers(request, response) {
 
     member.fullName = payload.fullName;
     member.phoneNumber = payload.phoneNumber;
+    member.currentLocation = payload.currentLocation;
     member.location = payload.location;
+    member.educationEmploymentStatus = payload.educationEmploymentStatus;
+    member.gender = payload.gender;
     member.status = payload.status;
     member.committee = payload.committee;
     member.committeeLeader = payload.committeeLeader;
@@ -534,6 +676,37 @@ async function bulkImportMembers(request, response) {
   });
 }
 
+async function submitFeedback(request, response) {
+  const fullName = String(request.body.fullName || "").trim();
+  const phoneNumber = normalizePhoneNumberForStorage(request.body.phoneNumber || "");
+  const message = String(request.body.message || "").trim();
+
+  if (!message) {
+    return response.status(400).json({
+      message: "Feedback message is required.",
+    });
+  }
+
+  const feedback = await Feedback.create({
+    fullName,
+    phoneNumber,
+    message,
+  });
+
+  return response.status(201).json({
+    message: "Feedback submitted successfully.",
+    feedback,
+  });
+}
+
+async function listFeedback(request, response) {
+  const feedbackItems = await Feedback.find({}).sort({ createdAt: -1 });
+
+  return response.json({
+    feedback: feedbackItems,
+  });
+}
+
 module.exports = {
   broadcastDebtors,
   bulkImportMembers,
@@ -543,8 +716,10 @@ module.exports = {
   getMemberByPhoneNumber,
   getPublicMemberDirectory,
   listMembers,
+  listFeedback,
   sendCommitteeReminderBroadcast,
   sendSingleReminder,
+  submitFeedback,
   syncMember,
   updatePaymentStatus,
 };
