@@ -2,7 +2,7 @@ const env = require("../config/env");
 const { normalizePhoneNumberForStorage } = require("../utils/phoneNumber");
 
 const DEFAULT_PAYMENT_REMINDER_TEMPLATE =
-  "áˆ°áˆ‹áˆ {{name}}á£ á‹¨áˆá‹°á‰³ áˆ›áˆ­á‹«áˆ áŒˆá‹³áˆ á‹¨{{month}} á‹ˆáˆ­ áˆ˜á‹‹áŒ®á‹ŽáŠ• áˆµáˆ‹áˆáŠ¨áˆáˆ‰ áŠ¥á‰£áŠ­á‹Ž á‰ CBE Birr á‹­áŠ­áˆáˆ‰á¢ áŠ áˆ˜áˆ°áŒáŠ“áˆˆáŠ•á¢";
+  "ሰላም {{name}}፣ የልደታ ማርያም ገዳም የ{{month}} ወር መዋጮዎን ስላልከፈሉ እባክዎ በCBE ሂሳብ ቁጥር 1000756701987 በአካውንት ስም ሀብተሚካኤል ዋጋው እና ቢሰጥ ይክፈሉ። አመሰግናለን።";
 
 function normalizeMessageBody(message = "") {
   return String(message).replace(/\r\n/g, "\n").trim();
@@ -20,16 +20,20 @@ function buildMessageContext(member = {}, month = "") {
 }
 
 function renderMessageTemplate(template = "", context = {}) {
-  const source = normalizeMessageBody(template) || DEFAULT_PAYMENT_REMINDER_TEMPLATE;
+  const source =
+    normalizeMessageBody(template) || DEFAULT_PAYMENT_REMINDER_TEMPLATE;
 
   return source.replace(
     /\{\{\s*(name|fullName|month|committee|phoneNumber|committeeLeader)\s*\}\}/gi,
-    (_, key) => String(context[key] ?? "")
+    (_, key) => String(context[key] ?? ""),
   );
 }
 
 function buildReminderMessage(member, month, customTemplate = "") {
-  return renderMessageTemplate(customTemplate, buildMessageContext(member, month));
+  return renderMessageTemplate(
+    customTemplate,
+    buildMessageContext(member, month),
+  );
 }
 
 function formatCampaignName(campaign = "", fallbackPrefix = "Lideta") {
@@ -49,7 +53,7 @@ function getTextBeeConfig() {
 
   if (!endpoint || !apiKey) {
     throw new Error(
-      "TextBee gateway is not configured. Set TEXTBEE_ENDPOINT and TEXTBEE_API_KEY."
+      "TextBee gateway is not configured. Set TEXTBEE_ENDPOINT and TEXTBEE_API_KEY.",
     );
   }
 
@@ -61,8 +65,8 @@ function buildGatewayRecipients(phoneNumbers = []) {
     new Set(
       phoneNumbers
         .map((phoneNumber) => normalizePhoneNumberForStorage(phoneNumber))
-        .filter(Boolean)
-    )
+        .filter(Boolean),
+    ),
   );
 }
 
@@ -113,7 +117,11 @@ async function postToTextBeeGateway(body) {
     const { parsedBody, rawBody } = await parseGatewayResponse(response);
 
     if (!response.ok) {
-      const errorMessage = buildGatewayErrorMessage(response.status, parsedBody, rawBody);
+      const errorMessage = buildGatewayErrorMessage(
+        response.status,
+        parsedBody,
+        rawBody,
+      );
       console.error("TextBee gateway returned an error response.", {
         endpoint,
         status: response.status,
@@ -161,12 +169,19 @@ async function sendSmsMessage({ to, message }) {
   });
 }
 
-function buildBatchedPersonalizedMessages(recipients = [], messageTemplate = "") {
+function buildBatchedPersonalizedMessages(
+  recipients = [],
+  messageTemplate = "",
+) {
   const groups = new Map();
 
   recipients.forEach((recipient) => {
     const phoneNumber = normalizePhoneNumberForStorage(recipient.phoneNumber);
-    const message = buildReminderMessage(recipient, recipient.month, messageTemplate);
+    const message = buildReminderMessage(
+      recipient,
+      recipient.month,
+      messageTemplate,
+    );
 
     if (!phoneNumber || !message) {
       return;
@@ -183,11 +198,17 @@ function buildBatchedPersonalizedMessages(recipients = [], messageTemplate = "")
   }));
 }
 
-async function sendBulkPersonalizedSms({ recipients, messageTemplate = "", campaign = "" }) {
+async function sendBulkPersonalizedSms({
+  recipients,
+  messageTemplate = "",
+  campaign = "",
+}) {
   const batches = buildBatchedPersonalizedMessages(recipients, messageTemplate);
 
   if (batches.length === 0) {
-    throw new Error("At least one recipient with a valid phone number is required.");
+    throw new Error(
+      "At least one recipient with a valid phone number is required.",
+    );
   }
 
   const batchResults = [];
@@ -206,25 +227,29 @@ async function sendBulkPersonalizedSms({ recipients, messageTemplate = "", campa
         ...result,
       });
     } catch (error) {
-      const errorMessage = String(error?.message || error || "TextBee batch send failed.");
+      const errorMessage = String(
+        error?.message || error || "TextBee batch send failed.",
+      );
       errors.push(
         ...batch.recipients.map((recipient) => ({
           to: recipient,
           message: batch.message,
           error: errorMessage,
-        }))
+        })),
       );
     }
   }
 
   const acceptedRecipients = batchResults.reduce(
     (total, batch) => total + batch.recipients.length,
-    0
+    0,
   );
   const failedRecipients = errors.length;
 
   if (acceptedRecipients === 0) {
-    throw new Error(errors[0]?.error || "TextBee gateway failed to send all reminders.");
+    throw new Error(
+      errors[0]?.error || "TextBee gateway failed to send all reminders.",
+    );
   }
 
   return {
