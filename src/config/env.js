@@ -6,6 +6,8 @@ dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 module.exports = {
   port: Number(process.env.PORT) || 5000,
   mongoUri: process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/lideta-community",
+  hasCustomMongoUri: Boolean(process.env.MONGODB_URI),
+  allowInMemoryDbFallback: process.env.ALLOW_IN_MEMORY_DB_FALLBACK === "true",
   clientOrigin: process.env.CLIENT_ORIGIN || "*",
   syncAuthToken: process.env.SYNC_AUTH_TOKEN || "",
   adminJwtSecret: process.env.ADMIN_JWT_SECRET || "lideta-admin-secret",
