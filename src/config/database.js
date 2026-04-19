@@ -5,6 +5,42 @@ const env = require("./env");
 let memoryServer;
 const DEFAULT_DB_NAME = "lideta-community";
 
+function validateMongoUri(uri = "") {
+  const trimmedUri = String(uri || "").trim();
+
+  if (!trimmedUri) {
+    return;
+  }
+
+  let parsedUri;
+
+  try {
+    parsedUri = new URL(trimmedUri);
+  } catch (error) {
+    throw new Error(
+      "MONGODB_URI is not a valid connection string. Use the full MongoDB URI from Atlas, for example: mongodb+srv://<username>:<password>@<cluster>.mongodb.net/lideta-community?retryWrites=true&w=majority"
+    );
+  }
+
+  if (!["mongodb:", "mongodb+srv:"].includes(parsedUri.protocol)) {
+    throw new Error(
+      "MONGODB_URI must start with mongodb:// or mongodb+srv://."
+    );
+  }
+
+  if (!parsedUri.hostname) {
+    throw new Error(
+      "MONGODB_URI is missing a hostname. Paste the full MongoDB connection string from Atlas."
+    );
+  }
+
+  if (parsedUri.protocol === "mongodb+srv:" && !parsedUri.hostname.includes(".")) {
+    throw new Error(
+      `MONGODB_URI looks incomplete. The SRV host is "${parsedUri.hostname}", but Atlas hosts usually look like "<cluster>.mongodb.net". Paste the full Atlas connection string into Render.`
+    );
+  }
+}
+
 function resolveDatabaseName(uri = "") {
   try {
     const databaseName = new URL(uri).pathname.replace(/^\//, "").trim();
@@ -19,6 +55,7 @@ async function connectDatabase() {
 
   if (env.mongoUri) {
     try {
+      validateMongoUri(env.mongoUri);
       const dbName = resolveDatabaseName(env.mongoUri);
 
       await mongoose.connect(env.mongoUri, {
