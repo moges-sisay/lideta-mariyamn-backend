@@ -14,6 +14,35 @@ const paymentSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    referenceNumber: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    referenceStatus: {
+      type: String,
+      enum: ["", "pending", "approved", "rejected"],
+      default: "",
+      trim: true,
+    },
+    referenceSubmittedAt: {
+      type: Date,
+      default: null,
+    },
+    referenceReviewedAt: {
+      type: Date,
+      default: null,
+    },
+    referenceReviewedBy: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    referenceNote: {
+      type: String,
+      default: "",
+      trim: true,
+    },
   },
   {
     _id: false,

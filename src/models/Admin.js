@@ -19,6 +19,22 @@ const adminSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+    passwordResetTokenHash: {
+      type: String,
+      default: "",
+    },
+    passwordResetExpiresAt: {
+      type: Date,
+      default: null,
+    },
+    passwordResetRequestedAt: {
+      type: Date,
+      default: null,
+    },
+    passwordChangedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

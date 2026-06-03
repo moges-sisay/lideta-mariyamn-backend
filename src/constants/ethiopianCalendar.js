@@ -78,6 +78,12 @@ function buildDefaultPayments() {
     accumulator[month] = {
       isPaid: false,
       paidAt: null,
+      referenceNumber: "",
+      referenceStatus: "",
+      referenceSubmittedAt: null,
+      referenceReviewedAt: null,
+      referenceReviewedBy: "",
+      referenceNote: "",
     };
 
     return accumulator;
@@ -112,6 +118,12 @@ function normalizePayments(payments) {
     nextPayments[month] = {
       isPaid: Boolean(plainPayments[month].isPaid),
       paidAt: plainPayments[month].paidAt || null,
+      referenceNumber: plainPayments[month].referenceNumber || "",
+      referenceStatus: plainPayments[month].referenceStatus || "",
+      referenceSubmittedAt: plainPayments[month].referenceSubmittedAt || null,
+      referenceReviewedAt: plainPayments[month].referenceReviewedAt || null,
+      referenceReviewedBy: plainPayments[month].referenceReviewedBy || "",
+      referenceNote: plainPayments[month].referenceNote || "",
     };
   });
 
@@ -132,4 +144,3 @@ module.exports = {
   isValidEthiopianMonth,
   normalizePayments,
 };
-

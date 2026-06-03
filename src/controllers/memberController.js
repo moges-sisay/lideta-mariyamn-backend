@@ -332,6 +332,7 @@ async function getAdminDashboardReport(request, response) {
 async function updatePaymentStatus(request, response) {
   const { memberId, month } = request.params;
   const { isPaid } = request.body;
+  const referenceNumber = String(request.body?.referenceNumber || "").trim();
 
   if (!isValidEthiopianMonth(month)) {
     return response.status(400).json({
@@ -355,8 +356,17 @@ async function updatePaymentStatus(request, response) {
 
   const nextPayments = normalizePayments(flattenPayments(member.payments));
   nextPayments[month] = {
+    ...(nextPayments[month] || {}),
     isPaid,
     paidAt: isPaid ? new Date() : null,
+    referenceNumber: referenceNumber || nextPayments[month]?.referenceNumber || "",
+    referenceStatus: isPaid
+      ? "approved"
+      : nextPayments[month]?.referenceStatus === "pending"
+      ? "pending"
+      : "",
+    referenceReviewedAt: isPaid ? new Date() : null,
+    referenceReviewedBy: isPaid ? getRegisteredAdminEmail(request) : "",
   };
 
   member.payments = nextPayments;
@@ -364,6 +374,143 @@ async function updatePaymentStatus(request, response) {
 
   return response.json({
     message: `${month} payment updated successfully.`,
+    member: serializeMember(member),
+  });
+}
+
+async function submitPaymentReference(request, response) {
+  const { memberId, month } = request.params;
+  const referenceNumber = String(request.body.referenceNumber || "").trim();
+  const note = String(request.body.note || "").trim();
+
+  if (!isValidEthiopianMonth(month)) {
+    return response.status(400).json({
+      message: "Invalid Ethiopian month supplied.",
+    });
+  }
+
+  if (!referenceNumber || referenceNumber.length < 4) {
+    return response.status(400).json({
+      message: "Reference number is required.",
+    });
+  }
+
+  const member = await Member.findById(memberId);
+
+  if (!member) {
+    return response.status(404).json({
+      message: "Member not found.",
+    });
+  }
+
+  const nextPayments = normalizePayments(flattenPayments(member.payments));
+  nextPayments[month] = {
+    ...(nextPayments[month] || {}),
+    isPaid: Boolean(nextPayments[month]?.isPaid),
+    paidAt: nextPayments[month]?.paidAt || null,
+    referenceNumber,
+    referenceStatus: nextPayments[month]?.isPaid ? "approved" : "pending",
+    referenceSubmittedAt: new Date(),
+    referenceReviewedAt: nextPayments[month]?.isPaid ? nextPayments[month]?.referenceReviewedAt || new Date() : null,
+    referenceReviewedBy: nextPayments[month]?.isPaid ? nextPayments[month]?.referenceReviewedBy || "" : "",
+    referenceNote: note,
+  };
+
+  member.payments = nextPayments;
+  await member.save();
+
+  return response.status(201).json({
+    message: nextPayments[month].isPaid
+      ? "Reference saved on an already paid month."
+      : "Reference submitted successfully. Admin will review it.",
+    member: serializeMember(member),
+  });
+}
+
+function buildPaymentReferenceItems(members, selectedMonth = "") {
+  const items = [];
+
+  members.forEach((member) => {
+    const serialized = serializeMember(member);
+    Object.entries(serialized.payments || {}).forEach(([month, payment]) => {
+      if (selectedMonth && month !== selectedMonth) {
+        return;
+      }
+
+      if (payment?.referenceStatus === "pending") {
+        items.push({
+          member: serialized,
+          month,
+          referenceNumber: payment.referenceNumber || "",
+          submittedAt: payment.referenceSubmittedAt || null,
+          note: payment.referenceNote || "",
+        });
+      }
+    });
+  });
+
+  return items.sort((a, b) => String(b.submittedAt || "").localeCompare(String(a.submittedAt || "")));
+}
+
+async function listPaymentReferences(request, response) {
+  const selectedMonth = String(request.query.month || "").trim();
+
+  if (selectedMonth && !isValidEthiopianMonth(selectedMonth)) {
+    return response.status(400).json({
+      message: "Invalid Ethiopian month supplied.",
+    });
+  }
+
+  const members = await Member.find({}).sort({ fullName: 1 });
+
+  return response.json({
+    references: buildPaymentReferenceItems(members, selectedMonth),
+  });
+}
+
+async function reviewPaymentReference(request, response) {
+  const { memberId, month } = request.params;
+  const approved = Boolean(request.body.approved);
+  const note = String(request.body.note || "").trim();
+
+  if (!isValidEthiopianMonth(month)) {
+    return response.status(400).json({
+      message: "Invalid Ethiopian month supplied.",
+    });
+  }
+
+  const member = await Member.findById(memberId);
+
+  if (!member) {
+    return response.status(404).json({
+      message: "Member not found.",
+    });
+  }
+
+  const nextPayments = normalizePayments(flattenPayments(member.payments));
+  const payment = nextPayments[month] || {};
+
+  if (!payment.referenceNumber) {
+    return response.status(400).json({
+      message: "No reference number has been submitted for this payment.",
+    });
+  }
+
+  nextPayments[month] = {
+    ...payment,
+    isPaid: approved,
+    paidAt: approved ? new Date() : null,
+    referenceStatus: approved ? "approved" : "rejected",
+    referenceReviewedAt: new Date(),
+    referenceReviewedBy: getRegisteredAdminEmail(request),
+    referenceNote: note || payment.referenceNote || "",
+  };
+
+  member.payments = nextPayments;
+  await member.save();
+
+  return response.json({
+    message: approved ? "Reference approved and payment marked paid." : "Reference rejected.",
     member: serializeMember(member),
   });
 }
@@ -716,10 +863,13 @@ module.exports = {
   getMemberByPhoneNumber,
   getPublicMemberDirectory,
   listMembers,
+  listPaymentReferences,
   listFeedback,
+  reviewPaymentReference,
   sendCommitteeReminderBroadcast,
   sendSingleReminder,
   submitFeedback,
+  submitPaymentReference,
   syncMember,
   updatePaymentStatus,
 };
