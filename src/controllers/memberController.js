@@ -108,6 +108,70 @@ async function createMember(request, response) {
   });
 }
 
+async function updateMember(request, response) {
+  const { memberId } = request.params;
+  const payload = buildMemberPayload(request.body, request);
+
+  if (!payload.fullName || !payload.phoneNumber || !payload.committee) {
+    return response.status(400).json({
+      message: "fullName, phoneNumber, and committee are required.",
+    });
+  }
+
+  const member = await Member.findById(memberId);
+  if (!member) {
+    return response.status(404).json({
+      message: "Member not found.",
+    });
+  }
+
+  const existing = await Member.findOne({
+    phoneNumber: payload.phoneNumber,
+    _id: { $ne: member._id },
+  });
+
+  if (existing) {
+    return response.status(409).json({
+      message: "Another member already uses this phone number.",
+    });
+  }
+
+  member.fullName = payload.fullName;
+  member.phoneNumber = payload.phoneNumber;
+  member.currentLocation = payload.currentLocation;
+  member.location = payload.location;
+  member.educationEmploymentStatus = payload.educationEmploymentStatus;
+  member.gender = payload.gender;
+  member.status = payload.status;
+  member.committee = payload.committee;
+  member.committeeLeader = payload.committeeLeader;
+  member.registeredByAdmin = payload.registeredByAdmin || member.registeredByAdmin;
+  member.payments = normalizePayments(flattenPayments(member.payments));
+
+  await member.save();
+
+  return response.json({
+    message: "Member updated successfully.",
+    member: serializeMember(member),
+  });
+}
+
+async function deleteMember(request, response) {
+  const { memberId } = request.params;
+  const member = await Member.findByIdAndDelete(memberId);
+
+  if (!member) {
+    return response.status(404).json({
+      message: "Member not found.",
+    });
+  }
+
+  return response.json({
+    message: "Member deleted successfully.",
+    memberId,
+  });
+}
+
 function serializeMember(member) {
   const payload = member.toObject();
 
@@ -858,6 +922,7 @@ module.exports = {
   broadcastDebtors,
   bulkImportMembers,
   createMember,
+  deleteMember,
   getAdminDashboardReport,
   getCommitteeGroups,
   getMemberByPhoneNumber,
@@ -871,5 +936,6 @@ module.exports = {
   submitFeedback,
   submitPaymentReference,
   syncMember,
+  updateMember,
   updatePaymentStatus,
 };

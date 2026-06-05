@@ -13,6 +13,8 @@ const {
   sendSingleReminder,
   submitFeedback,
   submitPaymentReference,
+  deleteMember,
+  updateMember,
   updatePaymentStatus,
 } = require("../controllers/memberController");
 
@@ -20,6 +22,8 @@ const router = express.Router();
 
 router.get("/members", requireAdminAuth, asyncHandler(listMembers));
 router.post("/members", requireAdminAuth, asyncHandler(createMember));
+router.patch("/members/:memberId", requireAdminAuth, asyncHandler(updateMember));
+router.delete("/members/:memberId", requireAdminAuth, asyncHandler(deleteMember));
 router.get("/members/by-phone/:phoneNumber", asyncHandler(getMemberByPhoneNumber));
 router.get("/members/public-directory", asyncHandler(getPublicMemberDirectory));
 router.get("/members/committee-groups", asyncHandler(getCommitteeGroups));
